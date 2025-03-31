@@ -59,6 +59,11 @@ with engine.connect() as connection:
         print("⚠️ Dropping measurement_data due to wrong column type")
         connection.execute(text("DROP TABLE IF EXISTS measurement_data CASCADE;"))
 
+# Drop and recreate measurement_data table
+with engine.connect() as conn:
+    conn.execute(text("DROP TABLE IF EXISTS measurement_data CASCADE;"))
+    conn.commit()
+
 # Create all tables
 Base.metadata.create_all(bind=engine)
 
