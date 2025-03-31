@@ -7,10 +7,9 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     ports:
-      - "5050:5432"
+      - "33333:5432"
     volumes:
       - ./data/postgres:/var/lib/postgresql/data
-    restart: always
   pgadmin:
     image: dpage/pgadmin4:9.1.0
     container_name: pgadmin
@@ -18,7 +17,17 @@ services:
       PGADMIN_DEFAULT_EMAIL: ${PGADMIN_DEFAULT_EMAIL}
       PGADMIN_DEFAULT_PASSWORD: ${PGADMIN_DEFAULT_PASSWORD}
     ports:
-      - "5051:80"
+      - "44444:80"
     volumes:
       - ./data/pgadmin:/var/lib/pgadmin
-    restart: always
+  backend:
+    build:
+      context: ./src
+      dockerfile: Dockerfile
+    container_name: backend
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@timescaledb:5432/${POSTGRES_DB}
+    ports:
+      - "55555:5000"
+    depends_on:
+      - timescaledb
