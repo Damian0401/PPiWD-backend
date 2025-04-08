@@ -5,9 +5,12 @@ from flask_swagger_ui import get_swaggerui_blueprint
 from sqlalchemy import create_engine, Column, Integer, String, TIMESTAMP, ForeignKey, Text, text
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from sqlalchemy.exc import OperationalError
+import os
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+API_HOST = os.getenv("API_HOST")
 
 # Database setup
-DATABASE_URL = 'postgresql://postgres:postgres@timescaledb:5432/postgres'
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
@@ -17,52 +20,35 @@ for i in range(10):
     try:
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
-        print("✅ Connected to the database")
+        print("Connected to the database")
         break
     except OperationalError:
-        print(f"⏳ Waiting for database... ({i+1}/10)")
+        print(f"Waiting for database... ({i+1}/10)")
         time.sleep(3)
 else:
-    raise Exception("❌ Could not connect to the database")
+    raise Exception("Could not connect to the database")
 
 # Models
 class Device(Base):
     __tablename__ = "devices"
     id = Column(Integer, primary_key=True, index=True)
     mac_address = Column(String, unique=True, nullable=False)
-    measurements = relationship("Measurement", back_populates="device")
+    measurements = relationship("MeasurementData", back_populates="device")
 
-class Measurement(Base):
-    __tablename__ = "measurements"
+class MeasurementType(Base):
+    __tablename__ = "measurement_types"
     id = Column(Integer, primary_key=True, index=True)
-    device_id = Column(Integer, ForeignKey("devices.id", ondelete="CASCADE"))
     type = Column(String, nullable=False)
-    device = relationship("Device", back_populates="measurements")
     data_entries = relationship("MeasurementData", back_populates="measurement")
 
 class MeasurementData(Base):
     __tablename__ = "measurement_data"
-    measurement_id = Column(Integer, ForeignKey("measurements.id", ondelete="CASCADE"), primary_key=True)
+    type_id = Column(Integer, ForeignKey("measurement_types.id", ondelete="CASCADE"), primary_key=True)
+    device_id = Column(Integer, ForeignKey("devices.id", ondelete="CASCADE"), primary_key=True)
     timestamp = Column(TIMESTAMP, nullable=False, primary_key=True)
     data = Column(Text, nullable=False)
-    measurement = relationship("Measurement", back_populates="data_entries")
-
-# Drop and recreate measurement_data if timestamp column is wrong type
-with engine.connect() as connection:
-    result = connection.execute(text("""
-        SELECT data_type
-        FROM information_schema.columns
-        WHERE table_name = 'measurement_data'
-          AND column_name = 'timestamp';
-    """)).fetchone()
-    if result and result[0] != 'timestamp without time zone':
-        print("⚠️ Dropping measurement_data due to wrong column type")
-        connection.execute(text("DROP TABLE IF EXISTS measurement_data CASCADE;"))
-
-# Drop and recreate measurement_data table
-with engine.connect() as conn:
-    conn.execute(text("DROP TABLE IF EXISTS measurement_data CASCADE;"))
-    conn.commit()
+    device = relationship("Device", back_populates="measurements")
+    measurement = relationship("MeasurementType", back_populates="data_entries")
 
 # Create all tables
 Base.metadata.create_all(bind=engine)
@@ -70,18 +56,18 @@ Base.metadata.create_all(bind=engine)
 # Convert to hypertable
 with engine.connect() as connection:
     try:
-        connection.execute(text("SELECT create_hypertable('measurement_data', 'timestamp', if_not_exists => TRUE);"))
-        print("📐 Hypertable created")
+        connection.execute(text("SELECT create_hypertable('measurement_data', by_range('timestamp'), if_not_exists => TRUE);"))
+        print("Hypertable created")
     except Exception as e:
-        print(f"❌ Error creating hypertable: {e}")
+        print(f"Error creating hypertable: {e}")
 
 # Flask app
 app = Flask(__name__)
 
 # Swagger UI Setup
 SWAGGER_URL = "/swagger"
-API_URL = "/static/swagger.json"
-swaggerui_blueprint = get_swaggerui_blueprint(SWAGGER_URL, API_URL)
+OPENAPI_URL = "/swagger.json"
+swaggerui_blueprint = get_swaggerui_blueprint(SWAGGER_URL, OPENAPI_URL)
 app.register_blueprint(swaggerui_blueprint, url_prefix=SWAGGER_URL)
 
 def get_or_create_device(session, mac_address):
@@ -92,25 +78,113 @@ def get_or_create_device(session, mac_address):
         session.commit()
     return device
 
-def get_or_create_measurement(session, device, measurement_type):
-    measurement = session.query(Measurement).filter_by(device_id=device.id, type=measurement_type).first()
+def get_or_create_measurement_types(session, measurement_type):
+    measurement = session.query(MeasurementType).filter_by(type=measurement_type).first()
     if not measurement:
-        measurement = Measurement(device_id=device.id, type=measurement_type)
+        measurement = MeasurementType(type=measurement_type)
         session.add(measurement)
         session.commit()
     return measurement
 
-@app.route("/save_measurements", methods=["POST"])
+@app.route("/swagger.json")
+def swagger_spec():
+    return jsonify({
+        "swagger": "2.0",
+        "info": {
+            "title": "Measurement API",
+            "version": "1.0"
+        },
+        "host": API_HOST,
+        "basePath": "/",
+        "paths": {
+            "/api/measurements": {
+                "post": {
+                    "summary": "Save device measurements",
+                    "description": "Saves measurements from a device",
+                    "consumes": ["application/json"],
+                    "produces": ["application/json"],
+                    "parameters": [
+                        {
+                            "in": "body",
+                            "name": "body",
+                            "required": True,
+                            "schema": {
+                                "$ref": "#/definitions/MeasurementPayload"
+                            }
+                        }
+                    ],
+                    "responses": {
+                        "201": {
+                            "description": "Measurements saved successfully",
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "message": {"type": "string"}
+                                }
+                            }
+                        },
+                        "500": {
+                            "description": "Server error",
+                            "schema": {
+                                "type": "object",
+                                "properties": {
+                                    "error": {"type": "string"}
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "definitions": {
+            "MeasurementPayload": {
+                "type": "object",
+                "required": ["macAddress", "measurements"],
+                "properties": {
+                    "macAddress": {"type": "string"},
+                    "measurements": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "required": ["type", "payload"],
+                            "properties": {
+                                "type": {"type": "string"},
+                                "payload": {
+                                    "type": "array",
+                                    "items": {
+                                        "type": "object",
+                                        "required": ["data", "timestamp"],
+                                        "properties": {
+                                            "data": {"type": "string"},
+                                            "timestamp": {
+                                                "type": "string",
+                                                "format": "date-time"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    })
+
+
+
+@app.route("/api/measurements", methods=["POST"])
 def save_measurements():
     data = request.get_json()
     session = SessionLocal()
     try:
         device = get_or_create_device(session, data["macAddress"])
         for measurement in data["measurements"]:
-            measurement_obj = get_or_create_measurement(session, device, measurement["type"])
+            measurement_obj = get_or_create_measurement_types(session, measurement["type"])
             for payload in measurement["payload"]:
                 measurement_data = MeasurementData(
-                    measurement_id=measurement_obj.id,
+                    type_id=measurement_obj.id,
+                    device_id=device.id,
                     data=payload["data"],
                     timestamp=datetime.fromisoformat(payload["timestamp"])
                 )
