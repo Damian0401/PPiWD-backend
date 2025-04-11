@@ -11,6 +11,7 @@ import json
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 API_HOST = os.getenv("API_HOST")
+API_KEY = os.getenv("API_KEY")
 
 # Database setup
 engine = create_engine(DATABASE_URL)
@@ -96,6 +97,12 @@ def swagger_spec():
                     "produces": ["application/json"],
                     "parameters": [
                         {
+                            "in": "header",
+                            "name": "X-Api-Key",
+                            "required": True,
+                            "type": "string"
+                        },
+                        {
                             "in": "body",
                             "name": "body",
                             "required": True,
@@ -167,6 +174,10 @@ def swagger_spec():
 
 @app.route("/api/measurements", methods=["POST"])
 def save_measurements():
+    header_api_key = request.headers.get("X-Api-Key")
+    if not header_api_key or header_api_key != API_KEY:
+        return jsonify({"error": "Unauthorized: Invalid or missing API key"}), 401
+
     data = request.get_json()
     session = SessionLocal()
     try:

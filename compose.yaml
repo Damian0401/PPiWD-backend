@@ -27,6 +27,7 @@ services:
     container_name: backend
     environment:
       - DATABASE_URL=postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@timescaledb:5432/${POSTGRES_DB}
+      - API_KEY=${API_KEY}
     ports:
       - "55555:5000"
     depends_on:
