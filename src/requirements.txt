@@ -2,4 +2,5 @@ Flask==2.3.3
 Flask-SQLAlchemy==3.1.1
 SQLAlchemy==2.0.25
 psycopg2-binary==2.9.9
-flask_swagger_ui
+flask_swagger_ui==4.11.1
+flask_cors==5.0.1

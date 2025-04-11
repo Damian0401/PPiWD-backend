@@ -6,6 +6,8 @@ from sqlalchemy import create_engine, Column, Integer, String, TIMESTAMP, Foreig
 from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 from sqlalchemy.exc import OperationalError
 import os
+from flask_cors import CORS
+import json
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 API_HOST = os.getenv("API_HOST")
@@ -14,19 +16,6 @@ API_HOST = os.getenv("API_HOST")
 engine = create_engine(DATABASE_URL)
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
-
-# Retry DB connection
-for i in range(10):
-    try:
-        with engine.connect() as conn:
-            conn.execute(text("SELECT 1"))
-        print("Connected to the database")
-        break
-    except OperationalError:
-        print(f"Waiting for database... ({i+1}/10)")
-        time.sleep(3)
-else:
-    raise Exception("Could not connect to the database")
 
 # Models
 class Device(Base):
@@ -63,6 +52,8 @@ with engine.connect() as connection:
 
 # Flask app
 app = Flask(__name__)
+
+CORS(app)
 
 # Swagger UI Setup
 SWAGGER_URL = "/swagger"
@@ -157,8 +148,9 @@ def swagger_spec():
                                         "properties": {
                                             "data": {"type": "string"},
                                             "timestamp": {
-                                                "type": "string",
-                                                "format": "date-time"
+                                            "type": "integer",
+                                            "format": "int64",
+                                            "description": "Timestamp in milliseconds since epoch"
                                             }
                                         }
                                     }
@@ -185,8 +177,8 @@ def save_measurements():
                 measurement_data = MeasurementData(
                     type_id=measurement_obj.id,
                     device_id=device.id,
-                    data=payload["data"],
-                    timestamp=datetime.fromisoformat(payload["timestamp"])
+                    data=json.dumps(payload["data"]),
+                    timestamp=datetime.fromtimestamp(payload["timestamp"] / 1000)
                 )
                 session.add(measurement_data)
         session.commit()
