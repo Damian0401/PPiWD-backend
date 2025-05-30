@@ -92,7 +92,6 @@ def swagger_spec():
             "title": "Measurement API",
             "version": "1.0"
         },
-        "host": API_HOST,
         "basePath": "/",
         "paths": {
             "/api/measurements": {
