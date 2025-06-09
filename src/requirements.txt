@@ -4,3 +4,9 @@ SQLAlchemy==2.0.25
 psycopg2-binary==2.9.9
 flask_swagger_ui==4.11.1
 flask_cors==5.0.1
+joblib
+numpy
+pandas
+scikit-learn==1.6.1
+torch
+tqdm
