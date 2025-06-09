@@ -1,23 +1,22 @@
 from pathlib import Path
 
 import joblib
-import kagglehub
 import numpy as np
 import pandas as pd
 import torch
 
-MODELS_PATH = Path.cwd() / "app" / "classification" / "models"
+MODELS_PATH = Path.cwd() / "classification" / "models"
 CLASSIFIER_PATH = MODELS_PATH / "classifier.pkl"
 SUPERVISED_CLASSIFIER_PATH = MODELS_PATH / "supervised_classifier.pkl"
 
 SCALLER_PATH = MODELS_PATH / "scaler.pkl"
 SUPERVISED_SCALLER_PATH = MODELS_PATH / "supervised_scaler.pkl"
 
+SUPERVISED_COLUMNS_PATH = MODELS_PATH / "columns.pkl"
+
 AUTOENCODER_PATH = MODELS_PATH / "autoencoder.pkl"
 
-path = Path(
-    kagglehub.dataset_download("uciml/human-activity-recognition-with-smartphones")
-)
+loaded_columns = joblib.load(SUPERVISED_COLUMNS_PATH)
 
 model = joblib.load(CLASSIFIER_PATH)
 autoencoder = joblib.load(AUTOENCODER_PATH)
@@ -28,7 +27,6 @@ def normalize_column(col):
     return (
         col.lower()
         .replace("accel", "acc")
-        .replace("magnet", "acc")
         .replace("_", "-")
         .replace("correlation()-", "correlation()-")
         .replace("()", "()")
@@ -54,14 +52,10 @@ def predict_labels(data):
 
 
 def data_predict(data):
-    path = Path(
-        kagglehub.dataset_download("uciml/human-activity-recognition-with-smartphones")
-    )
-    df = pd.read_csv(path / "test.csv", encoding="utf-8")
     # df_filtered = df[df_filtered_names]
     normalized_data_cols = {normalize_column(col): col for col in data.columns}
     common_cols = [
-        col for col in df.columns if normalize_column(col) in normalized_data_cols
+        col for col in loaded_columns if normalize_column(col) in normalized_data_cols
     ]
 
     X_new = data[[normalized_data_cols[normalize_column(col)] for col in common_cols]]

@@ -2,7 +2,7 @@ import json
 
 import pandas as pd
 
-from app.preprocessing import AXES, MEASUREMENT_TYPES, RESAMPLE_FREQ
+from preprocessing import AXES, MEASUREMENT_TYPES, RESAMPLE_FREQ
 
 
 def extract(row):

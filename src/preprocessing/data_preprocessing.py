@@ -4,7 +4,7 @@ from numpy.fft import fft, fftfreq
 from scipy.stats import entropy, kurtosis, skew
 from tqdm import tqdm
 
-from app.preprocessing import AXES, MEASUREMENT_TYPES
+from preprocessing import AXES, MEASUREMENT_TYPES
 
 WINDOW_SIZE = 64
 STEP_SIZE = 32
@@ -252,5 +252,4 @@ def extract_features(df):
 
             df_feats.append(row)
             pbar.update(1)
-            print(df_feats)
     return pd.DataFrame(df_feats)

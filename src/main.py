@@ -13,7 +13,6 @@ from preprocessing.data_preparation import marge_raw_data_to_dataframe_with_acc_
 from preprocessing.data_preprocessing import extract_features
 
 DATABASE_URL = os.getenv("DATABASE_URL")
-API_HOST = os.getenv("API_HOST")
 API_KEY = os.getenv("API_KEY")
 
 # Database setup
@@ -188,7 +187,8 @@ def swagger_spec():
                     "parameters": [
                         {"in": "header", "name": "X-Api-Key", "required": True, "type": "string"},
                         {"in": "query", "name": "start_date", "required": True, "type": "string", "format": "date"},
-                        {"in": "query", "name": "end_date", "required": True, "type": "string", "format": "date"}
+                        {"in": "query", "name": "end_date", "required": True, "type": "string", "format": "date"},
+                        {"in": "mac_address", "name": "end_date", "required": True, "type": "string"}
                     ],
                     "responses": {
                         "200": {
@@ -285,6 +285,7 @@ def predict():
         measurements = payload["measurements"]
 
         session = SessionLocal()
+        device_id = 1
 
         # Flatten and format data
         rows = []
@@ -294,11 +295,11 @@ def predict():
 
             for entry in measurement["payload"]:
                 timestamp = datetime.fromtimestamp(entry["timestamp"] / 1000)
-                data = json.dumps(entry["data"])  # ensure stringified JSON
+                data = json.dumps(entry["data"])
 
                 rows.append({
                     "type_id": type_id,
-                    "device_id": 1,
+                    "device_id": device_id,
                     "timestamp": timestamp,
                     "data": data
                 })
@@ -315,10 +316,12 @@ def predict():
 
         prediction = data_predict(model_input_df)
 
-        return jsonify({"prediction": float(prediction)}), 200
+        return jsonify({"prediction": prediction[0]['prediction']}), 200
 
     except Exception as e:
-        return jsonify({"error": f"Failed to generate prediction: {str(e)}"}), 500
+        return jsonify({
+            "error": f"Failed to generate prediction: {str(e)}"
+        }), 500
 
 
 
@@ -327,19 +330,64 @@ def history():
     header_api_key = request.headers.get("X-Api-Key")
     if not header_api_key or header_api_key != API_KEY:
         return jsonify({"error": "Unauthorized: Invalid or missing API key"}), 401
+
     start_date_str = request.args.get("start_date")
     end_date_str = request.args.get("end_date")
+    mac_address = request.args.get("mac_address")
+
+    if not start_date_str or not end_date_str or not mac_address:
+        return jsonify({"error": "Missing required parameters"}), 400
+
     try:
         start_date = datetime.fromisoformat(start_date_str)
         end_date = datetime.fromisoformat(end_date_str)
     except Exception:
         return jsonify({"error": "Invalid date format. Use ISO date format YYYY-MM-DD."}), 400
-    # TODO: Fetch historical predictions from data store
-    return jsonify({"predictions": [
-        {"timestamp": start_date.isoformat(), "prediction": 0},
-        {"timestamp": end_date.isoformat(), "prediction": 1}
-    ]}), 200
 
+    session = SessionLocal()
+    try:
+        device = session.query(Device).filter_by(mac_address=mac_address).first()
+        if not device:
+            return jsonify({"error": "Device not found"}), 404
+
+        data_query = session.query(MeasurementData).filter(
+            MeasurementData.device_id == device.id,
+            MeasurementData.timestamp >= start_date,
+            MeasurementData.timestamp <= end_date
+        ).all()
+
+        rows = [{
+            "type_id": entry.type_id,
+            "device_id": entry.device_id,
+            "timestamp": entry.timestamp,
+            "data": entry.data
+        } for entry in data_query]
+
+        if not rows:
+            return jsonify({"predictions": []}), 200
+
+        df = pd.DataFrame(rows)
+        df = marge_raw_data_to_dataframe_with_acc_gyro(df)
+
+        feature_df = extract_features(df)
+        predictions = data_predict(feature_df)
+
+        response = [
+            {
+                "timestamp": pred['timestamp'].isoformat() if isinstance(pred['timestamp'], datetime) else str(pred['timestamp']),
+                "prediction": pred['prediction']
+            }
+            for pred in predictions
+        ]
+
+        return jsonify({"predictions": response}), 200
+
+    except Exception as e:
+        return jsonify({
+            "error": f"Failed to generate prediction history: {str(e)}"
+        }), 500
+    finally:
+        session.close()
 
 if __name__ == "__main__":
     app.run(debug=True, host="0.0.0.0")
