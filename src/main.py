@@ -6,6 +6,11 @@ from sqlalchemy.orm import declarative_base, sessionmaker, relationship
 import os
 from flask_cors import CORS
 import json
+import pandas as pd
+from classification.autoencoder import Autoencoder  # noqa: F401, F401, F401
+from classification.classification import data_predict
+from preprocessing.data_preparation import marge_raw_data_to_dataframe_with_acc_gyro
+from preprocessing.data_preprocessing import extract_features
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 API_HOST = os.getenv("API_HOST")
@@ -273,8 +278,48 @@ def predict():
     header_api_key = request.headers.get("X-Api-Key")
     if not header_api_key or header_api_key != API_KEY:
         return jsonify({"error": "Unauthorized: Invalid or missing API key"}), 401
-    # TODO: Add data processing and model prediction
-    return jsonify({"prediction": 0}), 200
+
+    try:
+        payload = request.get_json()
+        mac_address = payload["macAddress"]
+        measurements = payload["measurements"]
+
+        session = SessionLocal()
+
+        # Flatten and format data
+        rows = []
+        for measurement in measurements:
+            measurement_type = get_or_create_measurement_types(session, measurement["type"])
+            type_id = measurement_type.id
+
+            for entry in measurement["payload"]:
+                timestamp = datetime.fromtimestamp(entry["timestamp"] / 1000)
+                data = json.dumps(entry["data"])  # ensure stringified JSON
+
+                rows.append({
+                    "type_id": type_id,
+                    "device_id": 1,
+                    "timestamp": timestamp,
+                    "data": data
+                })
+
+        session.close()
+
+        # Convert to DataFrame
+        df = pd.DataFrame(rows)
+
+        # Classification logic
+        df = df[df["device_id"].isin([device_id])]
+        df = marge_raw_data_to_dataframe_with_acc_gyro(df)
+        model_input_df = extract_features(df).iloc[[0]]
+
+        prediction = data_predict(model_input_df)
+
+        return jsonify({"prediction": float(prediction)}), 200
+
+    except Exception as e:
+        return jsonify({"error": f"Failed to generate prediction: {str(e)}"}), 500
+
 
 
 @app.route("/api/history", methods=["GET"])

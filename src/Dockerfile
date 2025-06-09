@@ -1,10 +1,24 @@
-FROM python:3.10-alpine AS builder
+FROM python:3.11-slim AS builder
 
 WORKDIR /app
 
+# Install system dependencies using apt
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    python3-dev \
+    libffi-dev \
+    libatlas-base-dev \
+    gfortran \
+    git \
+    cython3 \
+    && rm -rf /var/lib/apt/lists/*
+
 COPY requirements.txt /app
-RUN --mount=type=cache,target=/root/.cache/pip \ 
-    pip3 install -r requirements.txt
+
+# Cache pip installs
+RUN --mount=type=cache,target=/root/.cache/pip \
+    pip install --upgrade pip && \
+    pip install -r requirements.txt
 
 COPY . /app
 
