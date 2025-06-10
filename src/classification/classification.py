@@ -45,7 +45,8 @@ def predict_labels(data):
     with torch.no_grad():
         encoded = autoencoder.encoder(X_tensor)
 
-        logits = model(encoded)
+        # logits = model(encoded)
+        logits = model(X_tensor)
         preds = torch.argmax(logits, dim=1).cpu().numpy()
 
     # predicted_labels = label_encoder.inverse_transform(preds)
