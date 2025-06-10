@@ -18,9 +18,11 @@ AUTOENCODER_PATH = MODELS_PATH / "autoencoder.pkl"
 
 loaded_columns = joblib.load(SUPERVISED_COLUMNS_PATH)
 
-model = joblib.load(CLASSIFIER_PATH)
+# model = joblib.load(CLASSIFIER_PATH)
+model = joblib.load(SUPERVISED_CLASSIFIER_PATH)
 autoencoder = joblib.load(AUTOENCODER_PATH)
-scaler = joblib.load(SCALLER_PATH)
+# scaler = joblib.load(SCALLER_PATH)
+scaler = joblib.load(SUPERVISED_SCALLER_PATH)
 
 
 def normalize_column(col):
